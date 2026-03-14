@@ -13,15 +13,16 @@
 // Source: FlightPreference.scala — AppealPreference.isApplicable checks
 //   fromAirport.size >= LOUNGE_PASSENGER_AIRPORT_SIZE_REQUIREMENT (= 4)
 // Separate from loungeLevel: a lounge can exist at a small airport but Elite pax won't spawn there.
-export function createAirport({ label = 'Airport', income = 50000, size = 5, loyalty = 50, loungeLevel = 0 } = {}) {
-  return { label, income, size, loyalty, loungeLevel };
+// assets: list of { assetTypeKey, level, enabled } for PassengerCostAssetModifier assets.
+export function createAirport({ label = 'Airport', income = 50000, size = 5, loyalty = 50, loungeLevel = 0, brandingSpecialization = 'NONE', assets = [] } = {}) {
+  return { label, income, size, loyalty, loungeLevel, brandingSpecialization, assets: [...assets] };
 }
 
 // priceByClass maps cabin class keys to player-set prices.
 export function createLeg({
   flightTypeKey = 'SHORT_HAUL_INTERNATIONAL',
   distance      = 1200,
-  priceByClass  = { ECONOMY: 120, BUSINESS: 360, FIRST: 660 },
+  priceByClass  = { ECONOMY: 120, BUSINESS: 360, FIRST: 1080 },
   quality       = 65,
   frequency     = 7,
   aircraftSpeed = 800,
@@ -29,13 +30,17 @@ export function createLeg({
   return { flightTypeKey, distance, priceByClass: { ...priceByClass }, quality, frequency, aircraftSpeed };
 }
 
-// transitDiscountPercent: manual transit discount from airport assets at the layover airport.
-// Replaces per-asset calculation until the asset popup UI is built.
+// airportHotelLevel: Airport Hotel level at the layover airport (0 = none).
+// Discount is always computed from the level formula — never a manual input.
 export function createConnection({
-  type                    = 'SAME_AIRLINE_OR_ALLIANCE',
-  transitDiscountPercent  = 0,
+  type              = 'SAME_AIRLINE_OR_ALLIANCE',
+  airportHotelLevel = 0,
 } = {}) {
-  return { type, transitDiscountPercent };
+  return { type, airportHotelLevel };
+}
+
+export function createAirportAsset({ assetTypeKey, level = 1, enabled = true } = {}) {
+  return { assetTypeKey, level, enabled };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,11 +114,13 @@ export function addLeg() {
   const lastLeg     = state.legs[state.legs.length - 1];
 
   state.airports.push(createAirport({
-    label:       'Dest',
-    income:      lastAirport.income,
-    size:        lastAirport.size,
-    loyalty:     lastAirport.loyalty,
-    loungeLevel: lastAirport.loungeLevel,
+    label:                  'Dest',
+    income:                 lastAirport.income,
+    size:                   lastAirport.size,
+    loyalty:                lastAirport.loyalty,
+    loungeLevel:            lastAirport.loungeLevel,
+    brandingSpecialization: lastAirport.brandingSpecialization,
+    assets:                 [],
   }));
 
   state.legs.push(createLeg({
@@ -148,4 +155,16 @@ export function setOdDistanceOverride(distance) {
 
 export function setPieClass(target, cabinClassKey) {
   state.pieClassByTarget[target] = cabinClassKey;
+}
+
+export function addAssetToAirport(airportIndex, assetTypeKey) {
+  state.airports[airportIndex].assets.push(createAirportAsset({ assetTypeKey, level: 1, enabled: true }));
+}
+
+export function removeAssetFromAirport(airportIndex, assetIndex) {
+  state.airports[airportIndex].assets.splice(assetIndex, 1);
+}
+
+export function mutateAsset(airportIndex, assetIndex, fieldName, value) {
+  state.airports[airportIndex].assets[assetIndex][fieldName] = value;
 }

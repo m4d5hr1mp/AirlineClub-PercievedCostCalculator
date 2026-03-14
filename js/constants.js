@@ -171,10 +171,72 @@ export const ARCHETYPE_APPLICABLE_CLASSES = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BRANDING SPECIALIZATIONS
+// Source: AirlineBaseSpecialization.scala — BudgetAirlineSpecialization, PremiumAirlineSpecialization
+// Applied as externalCostModifier in PassengerSimulation.scala — ExternalCostModifier.value()
+// Checks BOTH link.from and link.to, multiplying their modifiers together on each leg.
+// costDeltaByClass: additive delta on top of 1.0 (so -0.05 → ×0.95 multiplier)
+// ─────────────────────────────────────────────────────────────────────────────
+export const BRANDING_SPECIALIZATIONS = {
+  NONE: {
+    label:            'None',
+    costDeltaByClass: { ECONOMY: 0, BUSINESS: 0, FIRST: 0 },
+  },
+  BRANDING_BUDGET: {
+    label:            'Branding: Budget',
+    costDeltaByClass: { ECONOMY: -0.05, BUSINESS: 0.05, FIRST: 0.05 },
+  },
+  BRANDING_PREMIUM: {
+    label:            'Branding: Premium',
+    costDeltaByClass: { ECONOMY: 0.05, BUSINESS: -0.05, FIRST: -0.05 },
+  },
+};
+
+export const BRANDING_SPECIALIZATION_KEYS = Object.keys(BRANDING_SPECIALIZATIONS);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PASSENGER COST ASSETS (destination discount assets)
+// Source: AirportAsset.scala — PassengerCostAssetModifier implementors
+//
+// These assets apply a discount to perceived cost at the destination airport.
+// The discount is stochastic in the sim (fires at `probabilityPct`% chance per
+// passenger group). When enabled in the tool we apply the deterministic
+// "always fired" value: baseDiscount × (0.5 + 0.5 × level / MAX_LEVEL).
+// Speed archetype passengers are always excluded (PassengerCostAssetModifier.computeDiscount).
+// touristDiscount applies to Economy and First cabin passengers.
+// businessDiscount applies to Business cabin passengers.
+// ─────────────────────────────────────────────────────────────────────────────
+export const PASSENGER_COST_ASSETS = {
+  SKI_RESORT:        { label: 'Ski Resort',        probabilityPct: 30, touristDiscount: 0.25, businessDiscount: 0.08 },
+  BEACH_RESORT:      { label: 'Beach Resort',      probabilityPct: 40, touristDiscount: 0.10, businessDiscount: 0.05 },
+  CONVENTION_CENTER: { label: 'Convention Center', probabilityPct: 40, touristDiscount: 0.00, businessDiscount: 0.30 },
+  MUSEUM:            { label: 'Museum',            probabilityPct: 30, touristDiscount: 0.12, businessDiscount: 0.05 },
+  AMUSEMENT_PARK:    { label: 'Amusement Park',    probabilityPct: 50, touristDiscount: 0.10, businessDiscount: 0.00 },
+  STADIUM:           { label: 'Stadium',           probabilityPct: 15, touristDiscount: 0.10, businessDiscount: 0.05 },
+  LANDMARK:          { label: 'Landmark',          probabilityPct: 70, touristDiscount: 0.08, businessDiscount: 0.03 },
+  GOLF_COURSE:       { label: 'Golf Course',       probabilityPct: 10, touristDiscount: 0.15, businessDiscount: 0.25 },
+};
+
+export const PASSENGER_COST_ASSET_KEYS = Object.keys(PASSENGER_COST_ASSETS);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AIRPORT HOTEL — transit wait time discount (connection cost only)
+// Source: AirportAsset.scala — AirportHotelAsset.computeTransitFreqDiscount
+// Always-on at connection airports, computed from level. Never a manual input.
+// Economy:        10% + (level/10) × 10%          → 10–20%
+// Business/First: Economy rate + (level/10) × 20%  → 10–40%
+// Both capped at 50%.
+// ─────────────────────────────────────────────────────────────────────────────
+export const AIRPORT_HOTEL_ECONOMY_BASE_RATE        = 0.10;
+export const AIRPORT_HOTEL_ECONOMY_LEVEL_RATE        = 0.10;
+export const AIRPORT_HOTEL_PREMIUM_EXTRA_LEVEL_RATE  = 0.20;
+export const AIRPORT_HOTEL_MAX_DISCOUNT              = 0.50;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CONNECTION COST BASE VALUES
 // Source: PassengerSimulation.scala — Bellman-Ford connection cost block
 // ─────────────────────────────────────────────────────────────────────────────
-export const CONNECTION_BASE_COST         = 25;  // same airline or alliance
+export const CONNECTION_BASE_COST           = 25;  // same airline or alliance
 export const CONNECTION_INTERLINE_SURCHARGE = 75; // added on top of base for carrier change
 export const CONNECTION_FREQUENCY_THRESHOLD = 42; // below this weekly freq, wait penalty applies
 // Frequency penalty formula: (3.5 * 24 * 5) / frequency — each extra hour wait = ~$5

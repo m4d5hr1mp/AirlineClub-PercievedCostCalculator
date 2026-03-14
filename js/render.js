@@ -12,6 +12,8 @@ import {
   SATISFACTION_ZERO_PRICE_RATIO_THRESHOLD,
   ROUTE_COST_TOLERANCE_FACTOR,
   LINK_COST_TOLERANCE_FACTOR,
+  BRANDING_SPECIALIZATIONS, BRANDING_SPECIALIZATION_KEYS,
+  PASSENGER_COST_ASSETS, PASSENGER_COST_ASSET_KEYS,
 } from './constants.js';
 
 import {
@@ -20,7 +22,8 @@ import {
   computeBudgetMultiplier,
   computeSatisfaction,
   computeRoutePerceivedCost,
-  computeLegPerceivedCost,
+  computeEffectiveAssetDiscount,
+  computeAirportHotelTransitDiscount,
 } from './formulas.js';
 
 import { buildPreferencePool, aggregatePoolByArchetype } from './pool.js';
@@ -322,14 +325,77 @@ function renderAirportPanel(airportIndex, airport) {
       </div>
     </div>
 
+    <div class="field">
+      <label>Base Branding Specialization</label>
+      <select onchange="window.handleAirportChange(${airportIndex}, 'brandingSpecialization', this.value)">
+        ${BRANDING_SPECIALIZATION_KEYS.map(key =>
+          `<option value="${key}" ${airport.brandingSpecialization === key ? 'selected' : ''}>
+            ${BRANDING_SPECIALIZATIONS[key].label}
+          </option>`
+        ).join('')}
+      </select>
+    </div>
+
     <div class="airport-stats-note">
       Budget multiplier: ${budgetMultiplierValue}×
       · ${airport.size >= 4 ? 'Elite pax eligible' : 'Elite pax blocked (size &lt; 4)'}
     </div>
 
-    <button class="button-manage-assets" disabled title="Asset management coming soon">
-      ⊞ Manage Assets (coming soon)
-    </button>
+    <div class="asset-panel">
+      <div class="asset-panel-header">
+        <span class="asset-panel-title">Destination Assets</span>
+        <select class="asset-add-select" id="asset-add-select-${airportIndex}"
+                onchange="window.handleAddAsset(${airportIndex}, this); this.selectedIndex = 0;">
+          <option value="">+ Add asset</option>
+          ${PASSENGER_COST_ASSET_KEYS.map(key =>
+            `<option value="${key}">${PASSENGER_COST_ASSETS[key].label}</option>`
+          ).join('')}
+        </select>
+      </div>
+      ${airport.assets.length === 0
+        ? `<div class="asset-empty-note">No assets — discounts not applied</div>`
+        : airport.assets.map((asset, assetIndex) => {
+            const assetDef = PASSENGER_COST_ASSETS[asset.assetTypeKey];
+            const discountE = (computeEffectiveAssetDiscount(asset.assetTypeKey, asset.level, 'ECONOMY') * 100).toFixed(1);
+            const discountB = (computeEffectiveAssetDiscount(asset.assetTypeKey, asset.level, 'BUSINESS') * 100).toFixed(1);
+            return `
+              <div class="asset-row ${asset.enabled ? '' : 'asset-row-disabled'}">
+                <div class="asset-row-top">
+                  <label class="asset-toggle-label">
+                    <input type="checkbox" ${asset.enabled ? 'checked' : ''}
+                           onchange="window.handleAssetChange(${airportIndex}, ${assetIndex}, 'enabled', this.checked)">
+                    <span class="asset-name">${assetDef.label}</span>
+                  </label>
+                  <button class="asset-remove-btn"
+                          onclick="window.handleRemoveAsset(${airportIndex}, ${assetIndex})">✕</button>
+                </div>
+                <div class="asset-row-controls">
+                  <label class="asset-field-label">Level</label>
+                  <select onchange="window.handleAssetChange(${airportIndex}, ${assetIndex}, 'level', +this.value)">
+                    ${Array.from({length: 10}, (_, i) => i + 1).map(lvl =>
+                      `<option value="${lvl}" ${asset.level === lvl ? 'selected' : ''}>${lvl}</option>`
+                    ).join('')}
+                  </select>
+                </div>
+                <div class="asset-stats">
+                  <span class="asset-stat">
+                    <span class="asset-stat-label">fire chance</span>
+                    <span class="asset-stat-value">${assetDef.probabilityPct}%</span>
+                  </span>
+                  <span class="asset-stat">
+                    <span class="asset-stat-label">tourist disc</span>
+                    <span class="asset-stat-value">${discountE}%</span>
+                  </span>
+                  <span class="asset-stat">
+                    <span class="asset-stat-label">biz disc</span>
+                    <span class="asset-stat-value">${discountB}%</span>
+                  </span>
+                </div>
+              </div>
+            `;
+          }).join('')
+      }
+    </div>
   `;
 }
 
@@ -408,6 +474,9 @@ function renderFlightPanel(legIndex, leg) {
 }
 
 function renderConnectionStrip(connectionIndex, connection) {
+  const hotelDiscount = computeAirportHotelTransitDiscount(connection.airportHotelLevel, 'ECONOMY');
+  const hotelDiscountBusiness = computeAirportHotelTransitDiscount(connection.airportHotelLevel, 'BUSINESS');
+
   return `
     <div class="connection-strip">
       <span class="connection-label">↯ Connection at ${state.airports[connectionIndex + 1]?.label || 'Airport ' + (connectionIndex + 1)}</span>
@@ -425,10 +494,19 @@ function renderConnectionStrip(connectionIndex, connection) {
       </div>
 
       <div class="connection-field">
-        <label>Transit discount % (airport assets)</label>
-        <input type="number" min="0" max="50" value="${connection.transitDiscountPercent}"
-               onchange="window.handleConnectionChange(${connectionIndex}, 'transitDiscountPercent', +this.value)">
+        <label>Airport Hotel level</label>
+        <select onchange="window.handleConnectionChange(${connectionIndex}, 'airportHotelLevel', +this.value)">
+          ${Array.from({length: 11}, (_, i) => i).map(lvl =>
+            `<option value="${lvl}" ${connection.airportHotelLevel === lvl ? 'selected' : ''}>${lvl === 0 ? 'None' : 'Level ' + lvl}</option>`
+          ).join('')}
+        </select>
       </div>
+
+      ${connection.airportHotelLevel > 0 ? `
+        <div class="connection-hotel-note">
+          transit discount: ${(hotelDiscount * 100).toFixed(1)}% E · ${(hotelDiscountBusiness * 100).toFixed(1)}% J/F
+        </div>
+      ` : ''}
     </div>
   `;
 }

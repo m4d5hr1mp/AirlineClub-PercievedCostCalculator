@@ -1,92 +1,69 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // APP — entry point
-// Imports state mutations and render, wires all event handlers, calls initial render.
-// Dynamic inline event handlers in render.js use window.handle* — those are
-// attached here so they survive re-renders.
+// Handles page routing (Calculator / Network Inputs / Trip Comparison),
+// wires all event handlers for the calculator page, and delegates to
+// render-network.js and render-comparison.js for the other pages.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  state,
-  mutateLeg,
-  mutateAirport,
-  mutateConnection,
-  addLeg,
-  removeLeg,
-  setOdDistanceAuto,
-  setOdDistanceOverride,
-  setPieClass,
+  state, mutateLeg, mutateAirport, mutateConnection,
+  addLeg, removeLeg, setOdDistanceAuto, setOdDistanceOverride,
+  setPieClass, addAssetToAirport, removeAssetFromAirport, mutateAsset,
 } from './state.js';
 
 import { renderAll, renderPies } from './render.js';
+import { renderNetworkPage, exposeNetworkHandlers } from './render-network.js';
+import { renderComparisonPage, exposeComparisonHandlers } from './render-comparison.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WINDOW-EXPOSED HANDLERS
-// Used by inline event handlers in dynamically generated HTML (render.js).
-// Mutation + re-render happen together here.
+// PAGE ROUTING
 // ─────────────────────────────────────────────────────────────────────────────
+const PAGES = ['calculator', 'network', 'comparison'];
+let activePage = 'calculator';
 
-window.handleLegChange = function(legIndex, fieldName, value) {
-  mutateLeg(legIndex, fieldName, value);
-  renderAll();
-};
+function navigateTo(pageId) {
+  activePage = pageId;
+  for (const id of PAGES) {
+    const el = document.getElementById('page-' + id);
+    if (el) el.style.display = id === pageId ? 'block' : 'none';
+  }
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.page === pageId);
+  });
+  if      (pageId === 'calculator')  renderAll();
+  else if (pageId === 'network')     renderNetworkPage();
+  else if (pageId === 'comparison')  renderComparisonPage();
+}
 
-// Separate handler for per-class prices to keep the call site readable
-window.handleLegPriceChange = function(legIndex, cabinClassKey, price) {
-  mutateLeg(legIndex, 'priceByClass', { cabinClassKey, price });
-  renderAll();
-};
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => navigateTo(tab.dataset.page));
+});
 
-window.handleAirportChange = function(airportIndex, fieldName, value) {
-  if (fieldName !== 'label') value = +value;
-  mutateAirport(airportIndex, fieldName, value);
-  renderAll();
-};
-
-window.handleConnectionChange = function(connectionIndex, fieldName, value) {
-  if (fieldName === 'transitDiscountPercent') value = +value;
-  mutateConnection(connectionIndex, fieldName, value);
-  renderAll();
-};
-
-window.handlePieClassChange = function(target, cabinClassKey, buttonElement) {
+// ─────────────────────────────────────────────────────────────────────────────
+// CALCULATOR PAGE HANDLERS
+// ─────────────────────────────────────────────────────────────────────────────
+window.handleLegChange = (legIndex, fieldName, value) => { mutateLeg(legIndex, fieldName, value); renderAll(); };
+window.handleLegPriceChange = (legIndex, cabinClassKey, price) => { mutateLeg(legIndex, 'priceByClass', { cabinClassKey, price }); renderAll(); };
+window.handleAirportChange = (airportIndex, fieldName, value) => { if (fieldName !== 'label') value = +value; mutateAirport(airportIndex, fieldName, value); renderAll(); };
+window.handleConnectionChange = (connectionIndex, fieldName, value) => { if (fieldName === 'airportHotelLevel') value = +value; mutateConnection(connectionIndex, fieldName, value); renderAll(); };
+window.handleAddAsset = (airportIndex, selectElement) => { const k = selectElement.value; if (!k) return; addAssetToAirport(airportIndex, k); renderAll(); };
+window.handleRemoveAsset = (airportIndex, assetIndex) => { removeAssetFromAirport(airportIndex, assetIndex); renderAll(); };
+window.handleAssetChange = (airportIndex, assetIndex, fieldName, value) => { mutateAsset(airportIndex, assetIndex, fieldName, value); renderAll(); };
+window.handlePieClassChange = (target, cabinClassKey, buttonElement) => {
   setPieClass(target, cabinClassKey);
-
-  // Update active tab styling within that pie panel
-  const tabGroup = buttonElement.closest('.pie-class-tabs');
-  tabGroup.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+  buttonElement.closest('.pie-class-tabs').querySelectorAll('button').forEach(b => b.classList.remove('active'));
   buttonElement.classList.add('active');
-
   renderPies();
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STATIC DOM EVENT LISTENERS
-// For elements that exist in the HTML skeleton from the start.
-// ─────────────────────────────────────────────────────────────────────────────
-
-document.getElementById('button-add-leg').addEventListener('click', () => {
-  addLeg();
-  renderAll();
-});
-
-document.getElementById('button-remove-leg').addEventListener('click', () => {
-  removeLeg();
-  renderAll();
-});
-
-document.getElementById('od-distance-auto-checkbox').addEventListener('change', function() {
-  setOdDistanceAuto(this.checked);
-  renderAll();
-});
-
-document.getElementById('od-distance-input').addEventListener('change', function() {
-  if (!state.odDistanceAuto) {
-    setOdDistanceOverride(+this.value);
-    renderAll();
-  }
-});
+document.getElementById('button-add-leg').addEventListener('click', () => { addLeg(); renderAll(); });
+document.getElementById('button-remove-leg').addEventListener('click', () => { removeLeg(); renderAll(); });
+document.getElementById('od-distance-auto-checkbox').addEventListener('change', function() { setOdDistanceAuto(this.checked); renderAll(); });
+document.getElementById('od-distance-input').addEventListener('change', function() { if (!state.odDistanceAuto) { setOdDistanceOverride(+this.value); renderAll(); } });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INITIAL RENDER
+// EXPOSE HANDLERS AND INIT
 // ─────────────────────────────────────────────────────────────────────────────
-renderAll();
+exposeNetworkHandlers();
+exposeComparisonHandlers();
+navigateTo('calculator');

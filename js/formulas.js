@@ -15,6 +15,13 @@ import {
   CONNECTION_INTERLINE_SURCHARGE,
   CONNECTION_FREQUENCY_THRESHOLD,
   CONNECTION_WAIT_PENALTY_COEFFICIENT,
+  BRANDING_SPECIALIZATIONS,
+  PASSENGER_COST_ASSETS,
+  AIRPORT_HOTEL_MAX_LEVEL,
+  AIRPORT_HOTEL_ECONOMY_BASE_RATE,
+  AIRPORT_HOTEL_ECONOMY_LEVEL_RATE,
+  AIRPORT_HOTEL_PREMIUM_EXTRA_LEVEL_RATE,
+  AIRPORT_HOTEL_MAX_DISCOUNT,
 } from './constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -270,19 +277,70 @@ export function computeLegPerceivedCost(aggregatedArchetype, leg, originAirport,
     perceivedCost *= (1 - eliteQualityDiscount);
   }
 
+  // ── 8. DESTINATION ASSET DISCOUNTS ──────────────────────────────────────
+  // Source: PassengerSimulation.scala — computePassengerCostAssetDiscount
+  //         AirportAsset.scala — PassengerCostAssetModifier.computeAssetDiscount
+  // Applied at link.to (destination airport) during pathfinding.
+  // Speed archetype is excluded by the source (PassengerCostAssetModifier.computeDiscount).
+  // When enabled, we apply the deterministic "always-fired" value.
+  if (archetypeId !== 'SPEED') {
+    for (const asset of destinationAirport.assets) {
+      if (!asset.enabled) continue;
+      const assetDiscount = computeEffectiveAssetDiscount(asset.assetTypeKey, asset.level, cabinClassKey);
+      // Bounded to 50% of this leg's cost (source: Math.min(cost * 0.5, newCost * discount))
+      const costDiscount = Math.min(perceivedCost * 0.5, perceivedCost * assetDiscount);
+      perceivedCost -= costDiscount;
+    }
+  }
+
   return Math.max(0, perceivedCost);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AIRPORT HOTEL TRANSIT DISCOUNT
+// Source: AirportAsset.scala — AirportHotelAsset.computeTransitFreqDiscount
+// Always-on when hotel level > 0. Applied to connection cost only.
+// Economy:        10% + (level/10) × 10%          → range 10–20%
+// Business/First: Economy rate + (level/10) × 20%  → range 10–40%
+// Both capped at 50%.
+// ─────────────────────────────────────────────────────────────────────────────
+export function computeAirportHotelTransitDiscount(airportHotelLevel, cabinClassKey) {
+  if (airportHotelLevel <= 0) return 0;
+  const levelRatio = airportHotelLevel / AIRPORT_HOTEL_MAX_LEVEL;
+  let discount = AIRPORT_HOTEL_ECONOMY_BASE_RATE + levelRatio * AIRPORT_HOTEL_ECONOMY_LEVEL_RATE;
+  if (cabinClassKey !== 'ECONOMY') {
+    discount += levelRatio * AIRPORT_HOTEL_PREMIUM_EXTRA_LEVEL_RATE;
+  }
+  return Math.min(AIRPORT_HOTEL_MAX_DISCOUNT, discount);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PASSENGER COST ASSET EFFECTIVE DISCOUNT
+// Source: AirportAsset.scala — PassengerCostAssetModifier.computeAssetDiscount
+// Formula: baseDiscount × (0.5 + 0.5 × level / MAX_LEVEL)
+// cabinClassKey determines tourist vs business discount.
+// Speed archetype must be excluded by the caller.
+// ─────────────────────────────────────────────────────────────────────────────
+export function computeEffectiveAssetDiscount(assetTypeKey, level, cabinClassKey) {
+  const assetDefinition = PASSENGER_COST_ASSETS[assetTypeKey];
+  if (!assetDefinition) return 0;
+  const baseDiscount = cabinClassKey === 'BUSINESS'
+    ? assetDefinition.businessDiscount
+    : assetDefinition.touristDiscount;
+  return baseDiscount * (0.5 + 0.5 * level / 10);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONNECTION COST
 // Source: PassengerSimulation.scala — Bellman-Ford connection cost block
 //
+// airportHotelLevel: level of Airport Hotel at the layover airport (0 = none).
+//   Discount computed from formula, not entered manually.
 // connectionType: 'SAME_AIRLINE_OR_ALLIANCE' | 'INTERLINE'
-// transitDiscountPercent: manual override (0–50) for airport asset discount
 // cabinClassKey: multiplied against connection cost
 // archetypeId: determines connectionCostRatio
 // ─────────────────────────────────────────────────────────────────────────────
-export function computeConnectionCost(leg1, leg2, connectionType, transitDiscountPercent, cabinClassKey, archetypeId) {
+export function computeConnectionCost(leg1, leg2, connectionType, airportHotelLevel, cabinClassKey, archetypeId) {
   const cabinClassMultiplier = CABIN_CLASSES[cabinClassKey].priceMultiplier;
 
   // Budget pax are more tolerant of connections, Speed pax hate them
@@ -304,10 +362,9 @@ export function computeConnectionCost(leg1, leg2, connectionType, transitDiscoun
 
   connectionCost *= connectionCostRatio * cabinClassMultiplier;
 
-  // Transit discount from airport assets (Airport Hotel, City Transit, etc.)
-  // Currently a manual numeric input; asset-specific UI planned for later.
-  const transitDiscountFraction = Math.min(0.5, transitDiscountPercent / 100);
-  connectionCost *= (1 - transitDiscountFraction);
+  // Airport Hotel transit discount — always-on, computed from level
+  const hotelDiscount = computeAirportHotelTransitDiscount(airportHotelLevel, cabinClassKey);
+  connectionCost *= (1 - hotelDiscount);
 
   return Math.max(0, connectionCost);
 }
@@ -315,19 +372,13 @@ export function computeConnectionCost(leg1, leg2, connectionType, transitDiscoun
 // ─────────────────────────────────────────────────────────────────────────────
 // FULL ROUTE PERCEIVED COST
 // Sums leg costs and connection costs for a complete itinerary.
-//
-// aggregatedArchetype: output from pool.js aggregatePoolByArchetype
-// cabinClassKey: 'ECONOMY' | 'BUSINESS' | 'FIRST'
-// legs: array of leg objects
-// airports: array of airport objects (length = legs.length + 1)
-// connections: array of connection objects (length = legs.length - 1)
 // ─────────────────────────────────────────────────────────────────────────────
 export function computeRoutePerceivedCost(aggregatedArchetype, cabinClassKey, legs, airports, connections) {
   let totalCost = 0;
 
   for (let legIndex = 0; legIndex < legs.length; legIndex++) {
-    const leg               = legs[legIndex];
-    const originAirport     = airports[legIndex];
+    const leg                = legs[legIndex];
+    const originAirport      = airports[legIndex];
     const destinationAirport = airports[legIndex + 1];
 
     totalCost += computeLegPerceivedCost(
@@ -335,13 +386,12 @@ export function computeRoutePerceivedCost(aggregatedArchetype, cabinClassKey, le
     );
 
     if (legIndex < legs.length - 1) {
-      const connection           = connections[legIndex];
-      const connectionAirport    = airports[legIndex + 1]; // the layover airport
+      const connection = connections[legIndex];
       totalCost += computeConnectionCost(
         leg,
         legs[legIndex + 1],
         connection.type,
-        connection.transitDiscountPercent,
+        connection.airportHotelLevel,
         cabinClassKey,
         aggregatedArchetype.archetypeId
       );
