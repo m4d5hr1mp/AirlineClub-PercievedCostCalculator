@@ -61,7 +61,7 @@ export const CABIN_CLASSES = {
   FIRST: {
     key:              'FIRST',
     level:            2,
-    priceMultiplier:  5.5,
+    priceMultiplier:  9.0,
     priceSensitivity: 0.6,
     label:            'First',
   },
