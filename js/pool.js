@@ -24,7 +24,9 @@ import { computeBudgetMultiplier } from './formulas.js';
 export function buildPreferencePool(originAirport, destinationAirport, cabinClassKey) {
   const budgetMultiplier = computeBudgetMultiplier(originAirport.income);
 
-  // Elite passengers only appear if both airports are large enough to support lounges
+  // Elite preferences use AppealPreference with loungeLevelRequired > 0.
+  // isApplicable() in FlightPreference.scala gates these on airport size >= 4 (LOUNGE_PASSENGER_AIRPORT_SIZE_REQUIREMENT).
+  // This is independent of loungeLevel — size is the airport's own scale, lounge is the airline's asset there.
   const elitePassengersApplicable =
     originAirport.size      >= LOUNGE_PASSENGER_AIRPORT_SIZE_REQUIREMENT &&
     destinationAirport.size >= LOUNGE_PASSENGER_AIRPORT_SIZE_REQUIREMENT;

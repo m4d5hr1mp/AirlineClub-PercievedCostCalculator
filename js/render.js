@@ -115,10 +115,14 @@ export function renderMeta() {
   const standardPriceBusiness = computeStandardPrice(odDistance, odFlightTypeKey, 'BUSINESS');
   const standardPriceFirst    = computeStandardPrice(odDistance, odFlightTypeKey, 'FIRST');
 
-  document.getElementById('meta-standard-price-economy').textContent =
-    '$' + standardPriceEconomy.toLocaleString();
-  document.getElementById('meta-standard-price-business-first').textContent =
-    '$' + standardPriceBusiness.toLocaleString() + ' / $' + standardPriceFirst.toLocaleString();
+  document.getElementById('meta-standard-prices').innerHTML = `
+    <span>$${standardPriceEconomy.toLocaleString()}</span>
+    <span style="color:var(--color-text-muted);font-size:14px;margin:0 4px;">/</span>
+    <span>$${standardPriceBusiness.toLocaleString()}</span>
+    <span style="color:var(--color-text-muted);font-size:14px;margin:0 4px;">/</span>
+    <span>$${standardPriceFirst.toLocaleString()}</span>
+    <span style="font-size:12px;font-weight:400;color:var(--color-text-muted);margin-left:8px;">E / J / F</span>
+  `;
 
   document.getElementById('meta-threshold-full-satisfaction').textContent =
     '100% sat ≤ $' + Math.floor(standardPriceEconomy * SATISFACTION_FULL_PRICE_RATIO_THRESHOLD).toLocaleString();
@@ -266,43 +270,66 @@ export function renderTable() {
 // LEG BUILDER
 // ─────────────────────────────────────────────────────────────────────────────
 function renderAirportPanel(airportIndex, airport) {
-  const incomeLevelValue  = computeIncomeLevelFromIncome(airport.income).toFixed(1);
+  const incomeLevelValue      = computeIncomeLevelFromIncome(airport.income).toFixed(1);
   const budgetMultiplierValue = computeBudgetMultiplier(airport.income);
 
   return `
     <div class="panel-title">Airport ${airportIndex + 1} — ${airport.label || '(unnamed)'}</div>
 
     <div class="field">
-      <label>Label / IATA</label>
+      <label>IATA / Label</label>
       <input type="text" value="${airport.label}"
              oninput="window.handleAirportChange(${airportIndex}, 'label', this.value)">
     </div>
-    <div class="field-row-2">
+
+    <div class="field-inline-pair">
       <div class="field">
         <label>Income ($/yr)</label>
         <input type="number" min="1000" value="${airport.income}"
                onchange="window.handleAirportChange(${airportIndex}, 'income', +this.value)">
       </div>
-      <div class="field">
-        <label>Size (1–10)</label>
-        <input type="number" min="1" max="10" value="${airport.size}"
-               onchange="window.handleAirportChange(${airportIndex}, 'size', +this.value)">
+      <div class="field-inline-value">
+        <span class="field-inline-value-label">income level</span>
+        ${incomeLevelValue}
       </div>
     </div>
-    <div class="field">
-      <label>Airline Loyalty at Airport (0–100)</label>
-      <input type="number" min="0" max="100" value="${airport.loyalty}"
-             onchange="window.handleAirportChange(${airportIndex}, 'loyalty', +this.value)">
+
+    <div class="field-inline-pair">
+      <div class="field">
+        <label>Airline Loyalty (0–100)</label>
+        <input type="number" min="0" max="100" value="${airport.loyalty}"
+               onchange="window.handleAirportChange(${airportIndex}, 'loyalty', +this.value)">
+      </div>
+      <div class="field" style="flex:0 0 110px;">
+        <label>Lounge Level</label>
+        <select onchange="window.handleAirportChange(${airportIndex}, 'loungeLevel', +this.value)">
+          <option value="0" ${airport.loungeLevel === 0 ? 'selected' : ''}>None (0)</option>
+          <option value="1" ${airport.loungeLevel === 1 ? 'selected' : ''}>Level 1</option>
+          <option value="2" ${airport.loungeLevel === 2 ? 'selected' : ''}>Level 2</option>
+          <option value="3" ${airport.loungeLevel === 3 ? 'selected' : ''}>Level 3</option>
+        </select>
+      </div>
     </div>
-    <div class="field">
-      <label>Airline Lounge Level (0–3)</label>
-      <input type="number" min="0" max="3" value="${airport.loungeLevel}"
-             onchange="window.handleAirportChange(${airportIndex}, 'loungeLevel', +this.value)">
+
+    <div class="field-inline-pair">
+      <div class="field">
+        <label>Airport Size (1–10)</label>
+        <select onchange="window.handleAirportChange(${airportIndex}, 'size', +this.value)">
+          ${Array.from({length: 10}, (_, i) => i + 1).map(s =>
+            `<option value="${s}" ${airport.size === s ? 'selected' : ''}>${s}${s >= 4 ? '' : ' (no Elite pax)'}</option>`
+          ).join('')}
+        </select>
+      </div>
     </div>
+
     <div class="airport-stats-note">
-      Income level: ${incomeLevelValue} ·
       Budget multiplier: ${budgetMultiplierValue}×
+      · ${airport.size >= 4 ? 'Elite pax eligible' : 'Elite pax blocked (size &lt; 4)'}
     </div>
+
+    <button class="button-manage-assets" disabled title="Asset management coming soon">
+      ⊞ Manage Assets (coming soon)
+    </button>
   `;
 }
 
@@ -314,45 +341,26 @@ function renderFlightPanel(legIndex, leg) {
   return `
     <div class="panel-title">Flight Properties</div>
 
-    <div class="field">
-      <label>Flight Type</label>
-      <select onchange="window.handleLegChange(${legIndex}, 'flightTypeKey', this.value)">
-        ${FLIGHT_TYPE_KEYS.map(key =>
-          `<option value="${key}" ${leg.flightTypeKey === key ? 'selected' : ''}>
-            ${FLIGHT_TYPES[key].label}
-          </option>`
-        ).join('')}
-      </select>
-    </div>
-
-    <div class="field-row-2">
+    <div class="field-row-3">
       <div class="field">
         <label>Distance (km)</label>
         <input type="number" min="50" value="${leg.distance}"
                onchange="window.handleLegChange(${legIndex}, 'distance', +this.value)">
       </div>
       <div class="field">
+        <label>Flight Type</label>
+        <select onchange="window.handleLegChange(${legIndex}, 'flightTypeKey', this.value)">
+          ${FLIGHT_TYPE_KEYS.map(key =>
+            `<option value="${key}" ${leg.flightTypeKey === key ? 'selected' : ''}>
+              ${FLIGHT_TYPES[key].label}
+            </option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="field">
         <label>Aircraft Speed (km/h)</label>
         <input type="number" min="200" max="2500" value="${leg.aircraftSpeed}"
                onchange="window.handleLegChange(${legIndex}, 'aircraftSpeed', +this.value)">
-      </div>
-    </div>
-
-    <div class="field-row-3">
-      <div class="field">
-        <label>Price — Economy ($)</label>
-        <input type="number" min="0" value="${leg.priceByClass.ECONOMY}"
-               onchange="window.handleLegPriceChange(${legIndex}, 'ECONOMY', +this.value)">
-      </div>
-      <div class="field">
-        <label>Price — Business ($)</label>
-        <input type="number" min="0" value="${leg.priceByClass.BUSINESS}"
-               onchange="window.handleLegPriceChange(${legIndex}, 'BUSINESS', +this.value)">
-      </div>
-      <div class="field">
-        <label>Price — First ($)</label>
-        <input type="number" min="0" value="${leg.priceByClass.FIRST}"
-               onchange="window.handleLegPriceChange(${legIndex}, 'FIRST', +this.value)">
       </div>
     </div>
 
@@ -369,8 +377,32 @@ function renderFlightPanel(legIndex, leg) {
       </div>
     </div>
 
-    <div class="leg-standard-price-note">
-      Std price this leg: $${standardPriceEconomy} / $${standardPriceBusiness} / $${standardPriceFirst} (E/J/F)
+    <div class="flight-standard-price-display">
+      <div class="display-label">Standard price this leg</div>
+      <div class="display-value">
+        $${standardPriceEconomy.toLocaleString()} &nbsp;/&nbsp;
+        $${standardPriceBusiness.toLocaleString()} &nbsp;/&nbsp;
+        $${standardPriceFirst.toLocaleString()}
+        <span style="font-size:11px;font-weight:400;color:var(--color-text-muted);margin-left:6px;">E / J / F</span>
+      </div>
+    </div>
+
+    <div class="field-row-3">
+      <div class="field">
+        <label>Your Price — Economy ($)</label>
+        <input type="number" min="0" value="${leg.priceByClass.ECONOMY}"
+               onchange="window.handleLegPriceChange(${legIndex}, 'ECONOMY', +this.value)">
+      </div>
+      <div class="field">
+        <label>Your Price — Business ($)</label>
+        <input type="number" min="0" value="${leg.priceByClass.BUSINESS}"
+               onchange="window.handleLegPriceChange(${legIndex}, 'BUSINESS', +this.value)">
+      </div>
+      <div class="field">
+        <label>Your Price — First ($)</label>
+        <input type="number" min="0" value="${leg.priceByClass.FIRST}"
+               onchange="window.handleLegPriceChange(${legIndex}, 'FIRST', +this.value)">
+      </div>
     </div>
   `;
 }

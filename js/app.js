@@ -15,9 +15,9 @@ import {
   setOdDistanceAuto,
   setOdDistanceOverride,
   setPieClass,
-} from '../state.js';
+} from './state.js';
 
-import { renderAll, renderPies } from '../render.js';
+import { renderAll, renderPies } from './render.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WINDOW-EXPOSED HANDLERS

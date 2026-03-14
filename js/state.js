@@ -9,6 +9,10 @@
 // FACTORY FUNCTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// size: airport scale 1–10, used to gate Elite preference applicability.
+// Source: FlightPreference.scala — AppealPreference.isApplicable checks
+//   fromAirport.size >= LOUNGE_PASSENGER_AIRPORT_SIZE_REQUIREMENT (= 4)
+// Separate from loungeLevel: a lounge can exist at a small airport but Elite pax won't spawn there.
 export function createAirport({ label = 'Airport', income = 50000, size = 5, loyalty = 50, loungeLevel = 0 } = {}) {
   return { label, income, size, loyalty, loungeLevel };
 }
@@ -50,7 +54,7 @@ export const state = {
     createLeg({
       flightTypeKey: 'SHORT_HAUL_INTERNATIONAL',
       distance:      1200,
-      priceByClass:  { ECONOMY: 120, BUSINESS: 360, FIRST: 660 },
+      priceByClass:  { ECONOMY: 120, BUSINESS: 360, FIRST: 1080 },
       quality:       65,
       frequency:     7,
       aircraftSpeed: 800,
